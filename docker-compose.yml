@@ -1,0 +1,25 @@
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: sandbox-nginx
+    restart: unless-stopped
+    ports:
+      - "${NGINX_HOST_PORT:-80}:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./logs/nginx:/var/log/nginx
+    networks:
+      - sandbox-net
+    labels:
+      - "sandbox.role=nginx"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+networks:
+  sandbox-net:
+    name: ${SHARED_NET:-sandbox-net}
+    driver: bridge

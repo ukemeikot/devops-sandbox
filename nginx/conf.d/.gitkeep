@@ -1,0 +1,2 @@
+# Per-env nginx location blocks are written here at runtime by
+# platform/create_env.sh and removed by platform/destroy_env.sh.

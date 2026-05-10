@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(chmod +x platform/*.sh monitor/*.py)",
+      "Bash(bash -n platform/create_env.sh)",
+      "Bash(bash -n platform/destroy_env.sh)",
+      "Bash(bash -n platform/cleanup_daemon.sh)",
+      "Bash(bash -n platform/simulate_outage.sh)",
+      "Bash(python3 -m py_compile platform/api.py monitor/health_monitor.py platform/demo-app/app.py)",
+      "Read(//c/Users/TechnologyDeveloper3/**)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\TechnologyDeveloper3"
+    ]
+  }
+}

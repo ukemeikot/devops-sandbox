@@ -1,0 +1,31 @@
+# Secrets
+.env
+
+# Runtime state
+envs/*.json
+!envs/.gitkeep
+
+# Logs
+logs/
+!logs/.gitkeep
+
+# Generated nginx routes
+nginx/conf.d/*.conf
+!nginx/conf.d/.gitkeep
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.swp
+
+# Pid files
+*.pid

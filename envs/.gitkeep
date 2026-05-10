@@ -1,0 +1,2 @@
+# State files for active environments are written here at runtime.
+# One env -> one envs/<env_id>.json. Atomic writes (temp + mv).
