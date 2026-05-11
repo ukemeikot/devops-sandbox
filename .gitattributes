@@ -1,0 +1,29 @@
+# Force LF for shell scripts and container-bound files. If git autocrlf
+# on Windows converts these to CRLF, bash chokes on `#!/usr/bin/env bash\r`
+# and nginx will spit "unknown directive" on the .conf snippets.
+
+* text=auto eol=lf
+
+*.sh        text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.conf      text eol=lf
+*.py        text eol=lf
+Dockerfile  text eol=lf
+Makefile    text eol=lf
+.env*       text eol=lf
+
+# PowerShell scripts: CRLF is the platform-native expectation.
+*.ps1       text eol=crlf
+*.psm1      text eol=crlf
+*.psd1      text eol=crlf
+
+# Binary assets.
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.ico       binary
+*.pdf       binary
+*.tar.gz    binary
+*.zip       binary

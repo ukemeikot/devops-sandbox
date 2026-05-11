@@ -5,8 +5,9 @@ environments**, deploy a demo app into them, **simulate outages**,
 **monitor health**, and **destroy everything** — automatically when the
 TTL elapses or on demand.
 
-> Stack: Docker, Docker Compose, Nginx, Bash, Python 3 (Flask).
-> Designed to run on a single Linux VM. One `make up` boots the whole platform.
+> Stack: Docker, Docker Compose, Nginx, Bash + PowerShell, Python 3 (Flask).
+> Designed to run on a single Linux **or Windows** VM. One `make up`
+> (or `.\make.ps1 up` on Windows) boots the whole platform.
 
 ---
 
@@ -61,11 +62,15 @@ half-written state.
 ```
 devops-sandbox/
 ├── platform/
-│   ├── create_env.sh         # provision an env (network + container + nginx route + log shipping + state)
-│   ├── destroy_env.sh        # tear down an env (kill log pid, rm containers, rm network, rm route, archive logs)
-│   ├── cleanup_daemon.sh     # background loop that destroys expired envs
-│   ├── simulate_outage.sh    # chaos toggle (crash | pause | network | recover | stress)
-│   ├── api.py                # Flask control API
+│   ├── create_env.sh         ┐ provision an env (network + container + nginx route + log shipping + state)
+│   ├── create_env.ps1        ┘ PowerShell parallel — identical on-disk effect
+│   ├── destroy_env.sh        ┐ tear down an env (kill log pid, rm containers, rm network, rm route, archive logs)
+│   ├── destroy_env.ps1       ┘
+│   ├── cleanup_daemon.sh     ┐ background loop that destroys expired envs
+│   ├── cleanup_daemon.ps1    ┘
+│   ├── simulate_outage.sh    ┐ chaos toggle (crash | pause | network | recover | stress)
+│   ├── simulate_outage.ps1   ┘
+│   ├── api.py                # Flask control API (auto-picks bash vs PowerShell at runtime)
 │   ├── requirements.txt
 │   └── demo-app/             # the throwaway "Hello World" app shipped in every env
 │       ├── Dockerfile
@@ -78,8 +83,10 @@ devops-sandbox/
 ├── envs/                     # one json file per active env (gitignored)
 ├── logs/                     # app, health, cleanup, monitor, api, archived/  (gitignored)
 ├── docker-compose.yml        # nginx
-├── Makefile                  # operator entry points
+├── Makefile                  # operator entry point for bash hosts
+├── make.ps1                  # operator entry point for Windows PowerShell hosts
 ├── .env.example              # copy to .env
+├── .gitattributes            # forces LF on shell scripts so cross-OS clones still run
 ├── README.md
 └── test.md                   # how to test every requirement end-to-end
 ```
@@ -88,39 +95,58 @@ devops-sandbox/
 
 ## Prerequisites
 
-| Tool             | Why                                                        |
-| ---------------- | ---------------------------------------------------------- |
-| Docker ≥ 20      | Runs nginx + every env container.                          |
-| Docker Compose ≥ 2 (`docker compose ...`) | Brings up nginx.                              |
-| Bash ≥ 4         | Lifecycle scripts use `mapfile`, `nullglob`, `[[ ]]`.      |
-| Python ≥ 3.10    | Runs the API, the monitor, and the demo app.               |
-| make             | Operator UX.                                               |
-| `curl`, `wget`   | Smoke tests + health checks.                               |
-| Linux host       | Spec requires single Linux VM. WSL2 also works for dev.    |
+| Tool                                | Why                                                                                  |
+| ----------------------------------- | ------------------------------------------------------------------------------------ |
+| Docker ≥ 20                         | Runs nginx + every env container.                                                    |
+| Docker Compose ≥ 2                  | Brings up nginx via `docker compose`.                                                |
+| Python ≥ 3.10                       | Runs the API, the monitor, and the demo app.                                         |
+| `curl`                              | Smoke tests + health checks. Bundled with Win10/11 (`curl.exe`), macOS, most Linux.  |
+| **One of these shell environments** |                                                                                      |
+| Bash ≥ 4 + `make`                   | Linux / macOS / WSL2 / Git Bash. Drives the `*.sh` scripts via the `Makefile`.       |
+| PowerShell ≥ 5.1                    | Windows. Default on Win10/11. Drives the `*.ps1` scripts via `make.ps1`.             |
+
+The platform ships with **parallel implementations** of every lifecycle
+script (`*.sh` and `*.ps1`) and an operator entry point for each
+(`Makefile` and `make.ps1`). The two paths produce identical on-disk
+state — an env created from PowerShell can be destroyed from bash and
+vice versa.
 
 ---
 
 ## Quick start (zero → running env in 5 commands)
 
+### Linux / macOS / WSL2 / Git Bash
+
 ```bash
-# 1. Configure environment.
-cp .env.example .env
-
-# 2. Install Python deps for the API + monitor.
-make install
-
-# 3. Bring up nginx, the daemon, the monitor, and the API.
-make up
-
-# 4. Create your first env (defaults: ttl 1800s).
-make create NAME=hello TTL=600
-
-# 5. Hit it.
-curl http://localhost/env/<env_id_printed_above>/
+cp .env.example .env             # 1. configure
+make install                     # 2. pip install deps
+make up                          # 3. nginx + daemon + monitor + API
+make create NAME=hello TTL=600   # 4. first env
+curl http://localhost/env/<env_id_printed_above>/    # 5. hit it
 ```
 
 Tear it all down with `make down`. Wipe local state, logs, archives,
 and generated nginx confs with `make clean`.
+
+### Windows (PowerShell)
+
+```powershell
+Copy-Item .env.example .env                          # 1. configure
+.\make.ps1 install                                   # 2. pip install deps
+.\make.ps1 up                                        # 3. nginx + daemon + monitor + API
+.\make.ps1 create -Name hello -Ttl 600               # 4. first env
+curl.exe http://localhost/env/<env_id_printed_above>/    # 5. hit it
+```
+
+Tear down with `.\make.ps1 down`. Wipe with `.\make.ps1 clean`.
+
+> **Windows tip:** if running scripts is blocked, either run from a
+> shell launched with
+> `powershell -ExecutionPolicy Bypass` or set the user-scope policy
+> once with
+> `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned`.
+> `make.ps1` itself launches its children with `-ExecutionPolicy Bypass`
+> so once the top-level script runs, the lifecycle scripts always run.
 
 ---
 
@@ -173,6 +199,11 @@ $ make destroy ENV=env-abc123
 ## Operator reference
 
 ### Make targets
+
+> Windows users substitute `.\make.ps1 <verb>` for every `make <target>`
+> below. The verbs and effects are identical; only the syntax for
+> passing arguments differs (e.g. `.\make.ps1 create -Name demo -Ttl 600`
+> instead of `make create NAME=demo TTL=600`).
 
 | Target              | Effect                                                                  |
 | ------------------- | ----------------------------------------------------------------------- |
@@ -262,8 +293,11 @@ the monitor with a typo on `--env`.
 
 ## Known limitations
 
-- **Linux-only.** Bash scripts use `mapfile`, `nullglob`, GNU `date -d`.
-  WSL2 on Windows works for development; native Windows does not.
+- **Runs on Linux _or_ Windows; macOS works too.** The lifecycle layer
+  is implemented twice (bash + PowerShell) and the API auto-picks. The
+  spec asks for a single Linux VM — Windows support is additive.
+  Production deployment is still recommended on Linux for hardened
+  Docker storage drivers and lower overhead.
 - **Path-based routing only.** Each env is reachable at `/env/<id>/`,
   not `<id>.example.com`. This avoids per-env DNS/TLS plumbing on a
   single VM but means the demo app must be path-agnostic

@@ -19,7 +19,8 @@ from __future__ import annotations
 
 import json
 import os
-import shlex
+import platform as _platform
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -34,9 +35,55 @@ PLATFORM_DIR = ROOT / "platform"
 app = Flask(__name__)
 
 
-def _run(script: str, *args: str) -> tuple[int, str, str]:
-    """Run a platform shell script from the project root."""
-    cmd = ["bash", str(PLATFORM_DIR / script), *args]
+def _detect_shell() -> str:
+    # Prefer bash so the Linux / WSL2 / Git Bash path stays the source
+    # of truth. Fall back to PowerShell only on bare Windows hosts.
+    if shutil.which("bash"):
+        return "bash"
+    if _platform.system() == "Windows":
+        for cand in ("pwsh", "powershell"):
+            if shutil.which(cand):
+                return cand
+    raise RuntimeError(
+        "No supported shell found. Install Git Bash, WSL2, or PowerShell."
+    )
+
+
+_SHELL = _detect_shell()
+
+
+def _ps_args(script_basename: str, args: tuple[str, ...]) -> list[str]:
+    # The .ps1 scripts use PowerShell-idiomatic params (-Env, -Mode,
+    # -EnvId). Translate the bash-flavored call sites so route handlers
+    # stay shell-agnostic.
+    if script_basename == "simulate_outage":
+        out: list[str] = []
+        i = 0
+        while i < len(args):
+            if args[i] == "--env" and i + 1 < len(args):
+                out += ["-Env", args[i + 1]]; i += 2
+            elif args[i] == "--mode" and i + 1 < len(args):
+                out += ["-Mode", args[i + 1]]; i += 2
+            else:
+                out.append(args[i]); i += 1
+        return out
+    if script_basename == "destroy_env":
+        return ["-EnvId", *args]
+    return list(args)
+
+
+def _run(script_basename: str, *args: str) -> tuple[int, str, str]:
+    """Invoke a platform script regardless of host shell."""
+    if _SHELL == "bash":
+        cmd = ["bash", str(PLATFORM_DIR / f"{script_basename}.sh"), *args]
+    else:
+        cmd = [
+            _SHELL,
+            "-NoProfile",
+            "-ExecutionPolicy", "Bypass",
+            "-File", str(PLATFORM_DIR / f"{script_basename}.ps1"),
+            *_ps_args(script_basename, args),
+        ]
     proc = subprocess.run(
         cmd, cwd=str(ROOT), capture_output=True, text=True, timeout=120
     )
@@ -80,7 +127,7 @@ def create_env():
     except (TypeError, ValueError):
         return jsonify(error="ttl must be a positive integer (seconds)"), 400
 
-    code, out, err = _run("create_env.sh", name, str(ttl))
+    code, out, err = _run("create_env", name, str(ttl))
     if code != 0:
         return jsonify(error="create_env failed", stdout=out, stderr=err), 500
 
@@ -122,7 +169,7 @@ def delete_env(env_id: str):
         return jsonify(error="invalid env id"), 400
     if _load_env(env_id) is None:
         return jsonify(error="not found"), 404
-    code, out, err = _run("destroy_env.sh", env_id)
+    code, out, err = _run("destroy_env", env_id)
     if code != 0:
         return jsonify(error="destroy_env failed", stdout=out, stderr=err), 500
     return jsonify(status="destroyed", env_id=env_id, log=out.strip())
@@ -168,7 +215,7 @@ def env_outage(env_id: str):
     if mode not in {"crash", "pause", "network", "recover", "stress"}:
         return jsonify(error="mode must be one of: crash, pause, network, recover, stress"), 400
 
-    code, out, err = _run("simulate_outage.sh", "--env", env_id, "--mode", mode)
+    code, out, err = _run("simulate_outage", "--env", env_id, "--mode", mode)
     if code != 0:
         return jsonify(error="simulate_outage failed", stdout=out, stderr=err), 500
     return jsonify(env_id=env_id, mode=mode, log=out.strip())
